@@ -1,0 +1,18 @@
+.{
+    .name = .zig_rknpu2,
+    .version = "2.3.0_1",
+    .fingerprint = 0x400da4e1d42c4840,
+    .dependencies = .{
+        .zstbi = .{
+            .url = "git+https://github.com/zig-gamedev/zstbi#4fce0ee7ca94bd42536c136d9a369e647bc55b14",
+            .hash = "122080418650eec7bd891749529fd13c99a118181fac8715035fdcfd8f76d65b2b0f",
+        },
+    },
+    .paths = .{
+        "src",
+        "build.zig",
+        "build.zig.zon",
+        "README.md",
+        "LICENSE",
+    },
+}
