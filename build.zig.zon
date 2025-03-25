@@ -1,6 +1,6 @@
 .{
     .name = .zig_rknpu2,
-    .version = "2.3.0_1",
+    .version = "2.3.1_1",
     .fingerprint = 0x400da4e1d42c4840,
     .dependencies = .{
         .zstbi = .{
