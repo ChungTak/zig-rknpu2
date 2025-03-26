@@ -14,6 +14,28 @@ zig-rknpu2是一个用Zig语言封装的RKNPU2库，用于在Rockchip NPU上运�
 - Zig 0.14.0或更高版本
 - RKNPU2运行时库
 
+## 预编译库
+
+项目已包含以下主流系统的预编译库:
+- aarch64-linux-gnu
+- aarch64-linux-android
+
+需要更多平台的库文件，可以从官方下载：[https://github.com/airockchip/rknn-toolkit2](https://github.com/airockchip/rknn-toolkit2)下载。
+
+
+## 编译
+
+项目通过环境变量`RKNPU2_LIBRARIES`指定RKNPU2库路径的路径:
+
+```bash
+# 示例: 指定自定义库路径
+export RKNPU2_LIBRARIES=/path/to/your/libraries 
+zig build
+```
+
+如果未设置环境变量，将使用项目内置的库(根据目标平台自动选择)。
+
+
 ## 安装
 
 ### 方法一：克隆仓库
@@ -39,7 +61,16 @@ zig build
 zig fetch --save git+https://github.com/ChungTak/zig-rknpu2.git
 ```
 
-然后在您的`build.zig.zon`文件中引用该依赖。
+或者在你的`build.zig.zon`中手动添加依赖:
+
+```zig
+.dependencies = .{
+    .zig_rknpu2 = .{
+        .url = "git+https://github.com/ChungTak/zig-rknpu2.git",
+        .hash = "...", // 使用zig fetch获取正确的hash
+    },
+},
+```
 
 ## 使用方法
 
@@ -84,32 +115,16 @@ pub fn main() !void {
 
 ```bash
 # Linux + aarch64 (默认)
-zig build
+zig build -Dtarget=aarch64-linux-gnu -Doptimize=ReleaseSafe
 
-# Linux + armhf
-zig build -Dplatform=Linux -Darch=armhf
+# Linux + armhf 32bit
+zig build -Dtarget=arm-linux-gnueabihf
 
 # Android + arm64-v8a
-zig build -Dplatform=Android -Darch=arm64_v8a
+zig build -Dtarget=aarch64-linux-android
 
-# Android + armeabi-v7a
-zig build -Dplatform=Android -Darch=armeabi_v7a
-```
-
-### 指定RKNPU2库路径
-
-可以通过环境变量指定RKNPU2库路径：
-
-```bash
-export RKNPU2_LIB_ROOT_DIR=/path/to/rknpu2
-zig build
-```
-
-如需更新版本，可以从官方下载：https://github.com/airockchip/rknn-toolkit2
-
-下载后编译参数或者环境变量添加：
-```bash
-RKNPU2_LIB_ROOT_DIR=rknn-toolkit2/rknpu2/runtime
+# Android + armeabi-v7a 32bit
+zig build -Dtarget=arm-linux-androi
 ```
 
 ## API文档
@@ -195,6 +210,16 @@ pub fn memSync(self: *Rknn, mem: *c.rknn_tensor_mem, mode: c.rknn_mem_sync_mode)
 - `create_mem_example.zig`：内存管理示例
 - `create_mem_with_rga_example.zig`：使用RGA加速的内存管理示例
 - `benchmark.zig`：性能基准测试示例
+
+编译并运行示例:
+
+```bash
+# 编译benchmark示例
+zig build -Dtarget=aarch64-linux-gnu
+
+# 运行benchmark示例
+LD_LIBRARY_PATH=runtime/lib/aarch64-linux-gnu ./zig-out/bin/benchmark
+```
 
 ## 许可证
 

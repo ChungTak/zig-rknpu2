@@ -1,62 +1,8 @@
 const std = @import("std");
 
-// 判断目标是否为Android
-fn isAndroid(target: std.Target) bool {
-    // 在Zig 0.14.0中检查Android平台
-    // 通常Android目标的环境是.android
-    return target.os.tag == .linux and target.abi == .android;
-}
-
 // 获取库文件路径
-fn getLibPath(target: std.Target, root_dir: ?[]const u8) ![]const u8 {
-    const base_dir = if (root_dir) |dir| dir else "runtime";
-    // 判断操作系统
-    if (target.os.tag == .linux) {
-        if (isAndroid(target)) {
-            // 判断 Android 的 CPU 架构
-            switch (target.cpu.arch) {
-                .aarch64 => {
-                    return std.fmt.allocPrint(std.heap.page_allocator, "{s}/Android/librknn_api/arm64-v8a", .{base_dir}) catch "runtime/Android/librknn_api/arm64-v8a";
-                },
-                .arm, .thumb => {
-                    return std.fmt.allocPrint(std.heap.page_allocator, "{s}/Android/librknn_api/armeabi-v7a", .{base_dir}) catch "runtime/Android/librknn_api/armeabi-v7a";
-                },
-                else => {
-                    return error.UnsupportedArchitecture;
-                },
-            }
-        } else {
-            // 判断 Linux 的 CPU 架构
-            switch (target.cpu.arch) {
-                .aarch64 => {
-                    return std.fmt.allocPrint(std.heap.page_allocator, "{s}/Linux/librknn_api/aarch64", .{base_dir}) catch "runtime/Linux/librknn_api/aarch64";
-                },
-                .arm, .thumb => {
-                    return std.fmt.allocPrint(std.heap.page_allocator, "{s}/Linux/librknn_api/armhf", .{base_dir}) catch "runtime/Linux/librknn_api/armhf";
-                },
-                else => {
-                    return error.UnsupportedArchitecture;
-                },
-            }
-        }
-    } else {
-        return error.UnsupportedPlatform;
-    }
-}
-
-// 获取头文件路径
-fn getIncludePath(target: std.Target, root_dir: ?[]const u8) ![]const u8 {
-    const base_dir = if (root_dir) |dir| dir else "runtime";
-    // 判断操作系统
-    if (target.os.tag == .linux) {
-        if (isAndroid(target)) {
-            return std.fmt.allocPrint(std.heap.page_allocator, "{s}/Android/librknn_api/include", .{base_dir}) catch "runtime/Android/librknn_api/include";
-        } else {
-            return std.fmt.allocPrint(std.heap.page_allocator, "{s}/Linux/librknn_api/include", .{base_dir}) catch "runtime/Linux/librknn_api/include";
-        }
-    } else {
-        return error.UnsupportedPlatform;
-    }
+fn getLibPath(target_str: []const u8) ![]const u8 {
+    return try std.fmt.allocPrint(std.heap.page_allocator, "runtime/lib/{s}", .{target_str});
 }
 
 // 创建RKNPU2库模块
@@ -76,17 +22,6 @@ fn createRknpu2Module(
 
     rknpu2_module.addLibraryPath(lib_path);
     rknpu2_module.addIncludePath(include_path);
-    // 获取目标平台和架构信息
-    const platform_str = if (isAndroid(target.result)) "Android" else "Linux";
-    const arch_str = switch (target.result.cpu.arch) {
-        .aarch64 => "aarch64",
-        .arm, .thumb => if (isAndroid(target.result)) "armeabi-v7a" else "armhf",
-        else => "unknown",
-    };
-
-    // 添加平台和架构宏
-    rknpu2_module.addCMacro("PLATFORM", platform_str);
-    rknpu2_module.addCMacro("ARCH", arch_str);
 
     return rknpu2_module;
 }
@@ -150,7 +85,8 @@ fn buildExamples(
         const run_example = b.addRunArtifact(exe);
         run_example.step.dependOn(b.getInstallStep());
 
-        const example_step = b.step(example.name, "Build and run the simple example");
+        const example_step_desc = std.fmt.allocPrint(b.allocator, "Build and run the {s}", .{example.name}) catch unreachable;
+        const example_step = b.step(example.name, example_step_desc);
         example_step.dependOn(&run_example.step);
 
         // 添加只编译不运行的步骤
@@ -171,31 +107,21 @@ pub fn build(b: *std.Build) void {
             .abi = .gnu,
         },
     });
+    const target_str = std.fmt.allocPrint(b.allocator, "{s}-{s}-{s}", .{ @tagName(target.result.cpu.arch), @tagName(target.result.os.tag), @tagName(target.result.abi) }) catch "aarch64-linux-gnu";
     const optimize = b.standardOptimizeOption(.{});
 
-    // 获取RKNPU2库路径选项
-    const rknpu2_root_dir_opt = b.option([]const u8, "RKNPU2_LIB_ROOT_DIR", "Path to RKNPU2 library ROOT directory");
+    // 获取RKNPU2库路径RKNPU2_LIBRARIES环境变量
+    const rknpu2_lib = std.process.getEnvVarOwned(std.heap.page_allocator, "RKNPU2_LIBRARIES") catch null;
 
-    // 获取RK_LIBRGA_ROOT_DIR环境变量
-    const rknpu2_root_dir_env = std.process.getEnvVarOwned(std.heap.page_allocator, "RKNPU2_LIB_ROOT_DIR") catch null;
-
-    // 确定根目录：优先使用命令行选项，其次使用环境变量
-    const root_dir = if (rknpu2_root_dir_opt) |dir| dir else rknpu2_root_dir_env;
-
-    // 检查目标平台和架构是否支持
-    const lib_path = getLibPath(target.result, root_dir) catch |err| {
-        std.debug.print("Error: {s}. Only Linux and Android platforms with ARM/ARM64 architectures are supported.\n", .{@errorName(err)});
+    // 本地链接库路径
+    const lib_path = getLibPath(target_str) catch |err| {
+        std.debug.print("Error: {s}. lib path not found.\n", .{@errorName(err)});
         return;
     };
 
-    const include_path = getIncludePath(target.result, root_dir) catch |err| {
-        std.debug.print("Error: {s}. Only Linux and Android platforms are supported.\n", .{@errorName(err)});
-        return;
-    };
-
-    // 如果指定了自定义库路径，则使用自定义路径
-    const final_lib_path = lib_path;
-    const final_include_path = include_path;
+    // 确定库路径：优先使用使用环境变量
+    const final_lib_path = if (rknpu2_lib) |env_dir| env_dir else lib_path;
+    const final_include_path = "runtime/include";
 
     // 创建库模块
     const rknpu2_module = createRknpu2Module(b, target, optimize, b.path(final_lib_path), b.path(final_include_path));
@@ -212,18 +138,6 @@ pub fn build(b: *std.Build) void {
     lib.linkSystemLibrary("rknnrt");
     lib.addLibraryPath(b.path(final_lib_path));
     lib.addIncludePath(b.path(final_include_path));
-
-    // 获取目标平台和架构信息
-    const platform_str = if (isAndroid(target.result)) "Android" else "Linux";
-    const arch_str = switch (target.result.cpu.arch) {
-        .aarch64 => "aarch64",
-        .arm, .thumb => if (isAndroid(target.result)) "armeabi-v7a" else "armhf",
-        else => "unknown",
-    };
-
-    // 添加平台和架构宏
-    lib.root_module.addCMacro("PLATFORM", platform_str);
-    lib.root_module.addCMacro("ARCH", arch_str);
 
     // 安装库
     b.installArtifact(lib);
